@@ -1,1 +1,7 @@
 streamlit
+google.generativeai
+plotly
+kaleido
+openpyxl
+python-dotenv
+streamlit_chat
