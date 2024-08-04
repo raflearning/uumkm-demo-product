@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import time
+import plotly.express as px
 import google.generativeai as genai
 from google.api_core.exceptions import InternalServerError
 from dotenv import load_dotenv
@@ -23,7 +24,7 @@ st.write(
 st.markdown("---")
 
 # Ambil API key dari variabel lingkungan
-API_KEY = st.secrets["general"]["API_KEY"]
+API_KEY = st.secrets["general"]["APIKEY"]
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel(model_name='gemini-1.5-flash')
 
@@ -91,7 +92,6 @@ def get_business_options(sheet_name):
     }
     return options.get(sheet_name, [])
 
-# Inisialisasi session state
 if 'charts' not in st.session_state:
     st.session_state.charts = []
 if 'interpretation' not in st.session_state:
@@ -100,12 +100,14 @@ if 'selected_sheet' not in st.session_state:
     st.session_state.selected_sheet = ""
 if 'selected_business_info' not in st.session_state:
     st.session_state.selected_business_info = ""
+if 'keep_interpretation' not in st.session_state:
+    st.session_state.keep_interpretation = False
 if 'chatbot_response' not in st.session_state:
     st.session_state.chatbot_response = ""
 if 'interpretation_done' not in st.session_state:
     st.session_state.interpretation_done = False
-if 'keep_interpretation' not in st.session_state:
-    st.session_state.keep_interpretation = False
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []    
 
 # Sidebar for file upload
 st.sidebar.header("Unggah Data Penjualan Bisnis Kamu")
@@ -133,6 +135,22 @@ with st.sidebar.expander("Bantuan", expanded=False):
 if not st.session_state.get('hint_shown', False):
     st.info("🔔 **Hint:** Untuk bantuan menggunakan aplikasi ini, lihat panel Bantuan di sidebar.")
     st.session_state['hint_shown'] = True
+
+def add_date_picker(df):
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input("Start Date", min_value=df.index.min(), max_value=df.index.max(), value=df.index.min())
+    with col2:
+        end_date = st.date_input("End Date", min_value=df.index.min(), max_value=df.index.max(), value=df.index.max())
+    return start_date, end_date
+
+def add_sort_buttons():
+    col1, col2 = st.columns(2)
+    with col1:
+        sort_order = st.radio("Sort Order", ("Ascending", "Descending"))
+    with col2:
+        sort_by = st.radio("Sort By", ("Value", "Category"))
+    return sort_order, sort_by
 
 if tab_selection == "Dashboard":
     if data is not None:
@@ -194,29 +212,64 @@ if tab_selection == "Dashboard":
                         except Exception as e:
                             st.write(f"### Error: Could not display Plotly figure. Error: {e}")
 
+                # Display charts first
                 if 'charts' in st.session_state:
                     display_charts(st.session_state.charts)
 
-                def display_interpretation(interpretation):
-                    interpretation_text = ""
-                    interpretation_box = st.empty()
-                    for i in range(len(interpretation)):
-                        interpretation_text += interpretation[i]
-                        interpretation_box.markdown(interpretation_text)
-                        time.sleep(0.004)
+                # Then display interpretation with typing effect
+                st.write("### ✨ Interpretasi AI")
+                typing_response = ""
+                typing_box = st.empty()
+                for i in range(len(st.session_state.interpretation)):
+                    typing_response += st.session_state.interpretation[i]
+                    typing_box.markdown(
+                        f'<div style="border: 2px solid #008080; padding: 10px; border-radius: 10px; margin-bottom: 10px;">'
+                        f'{typing_response}'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+                    time.sleep(0.004)
 
-                if 'interpretation' in st.session_state:
-                    display_interpretation(st.session_state.interpretation)
-
-                st.write("---")
-                st.write("[Masih bingung sama hasilnya? Yuk kunjungi Chatbot!](#)")
-
+    # Hyperlink to Chatbot
+    st.markdown("[Masih bingung sama hasilnya? Yuk tanyain ke Chatbot!](#chatbot)")
 
 elif tab_selection == "Chatbot":
-    st.write("💬 **Chatbot AI**")
-    st.write("Kamu masih punya pertanyaan terkait hasil visualisasinya? Tanyakan di bawah ya!")
+    st.write("### ✨ Business AIssistant")
+    st.write("Ketik pertanyaan kamu di bawah ini untuk mendapatkan jawaban berdasarkan hasil visualisasi dan interpretasi data.")
 
-    # Display visualizations and interpretations
+    def get_chatbot_response(user_question):
+        try:
+            prompt = (
+                "Bertindaklah sebagai data dan business analyst profesional. Tugas kamu adalah menjawab pertanyaan dari pelaku UMKM seputar bisnis UMKM mereka. "
+                "Jawablah sesuai dengan pertanyaan pelaku UMKM. Kamu menjawab berdasarkan visualisasi chart dan interpretasi yang telah kamu buat sendiri. "
+                "Jawab dengan gaya bahasa yang sama dari interpretasi yang kamu buat sendiri tersebut. "
+                "Gunakan bahasa yang santai, mudah dipahami, friendly untuk pemula hingga ahli, dan tetap berfokus pada konteks bisnis. "
+                "Selalu panggil user dengan 'Kamu', gunakan bahasa yang energik, menarik, dan tidak membosankan. "
+                "Interpretasikan secara spesifik dan mendalam dalam konteks bisnis yang sesuai dan berikan rekomendasi yang dapat membantu bisnis untuk berkembang. "
+                "Jelaskan data dengan detail, sampaikan informasi yang bermanfaat kepada pelaku UMKM. "
+                "Tekankan kalimat atau kata yang penting dengan **bold**, _italic_, atau __underline__ sesuai kebutuhan. Buatkan poin-poin atau tabel jika perlu. "
+                "Berikut adalah pertanyaan yang harus kamu jawab.\n"
+                f"Pertanyaan: {user_question}\n"
+                f"Jawab dalam konteks bisnis, berdasarkan hasil visualisasi dan interpretasi yang telah kamu buat sendiri.\n\n"
+                f"**Ini adalah hasil Visualisasi dan Interpretasi yang sudah kamu buat sendiri sebelumnya:**\n"
+            )
+
+            if 'charts' in st.session_state:
+                prompt += "Berikut adalah visualisasi yang telah ditampilkan:\n"
+                for idx, chart in enumerate(st.session_state.charts):
+                    prompt += f"Visualisasi {idx + 1}: {chart.get('description', 'Tidak ada deskripsi')}\n"
+
+            if 'interpretation' in st.session_state:
+                prompt += "\nInterpretasi sebelumnya:\n"
+                prompt += st.session_state.interpretation
+
+            # Update response generation method
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            return f"### Error: {e}"
+
+    # Display previous visualizations and interpretations
     st.write("### **Hasil Visualisasi dan Interpretasi Sebelumnya**")
     
     if 'charts' in st.session_state:
@@ -229,50 +282,85 @@ elif tab_selection == "Chatbot":
 
     if 'interpretation' in st.session_state:
         st.write("#### **Interpretasi:**")
-        interpretation_text = ""
-        interpretation_box = st.empty()
-        for i in range(len(st.session_state.interpretation)):
-            interpretation_text += st.session_state.interpretation[i]
-        interpretation_box.markdown(interpretation_text)
-        time.sleep(0.004)
+        interpretation_text = st.session_state.interpretation
+        st.markdown(
+            f'<div style="border: 2px solid #008080; padding: 10px; border-radius: 10px; margin-bottom: 10px;">'
+            f'{interpretation_text}'
+            f'</div>',
+            unsafe_allow_html=True
+        )
 
-    # Text generation
-    st.write("### **Ajukan Pertanyaan Kamu**")
-    
-    # Text area for user question input
-    user_question = st.text_area("Tuliskan pertanyaan di sini...", key="chat_input", height=100)
+    # Function to display chat history in styled boxes
+    def display_chat(chat_history, typing_response=""):
+        chat_display = '<div style="border: 2px solid #e0e0e0; padding: 10px; border-radius: 10px; width: 100%; white-space: pre-wrap;">'
+        for chat in chat_history:
+            if "user" in chat:
+                chat_display += (
+                    f'<div style="display: flex; justify-content: flex-end; margin-bottom: 5px;">'
+                    f'<div style="background-color: #dcf8c6; padding: 10px; border-radius: 10px; max-width: 80%;">'
+                    f'<strong>You:</strong> {chat["user"]}'
+                    f'</div>'
+                    f'</div>'
+                )
+            if "bot" in chat:
+                chat_display += (
+                    f'<div style="display: flex; justify-content: flex-start; margin-bottom: 5px;">'
+                    f'<div style="padding: 10px; border-radius: 10px; max-width: 80%;">'
+                    f'<strong>Bot:</strong> {chat["bot"]}'
+                    f'</div>'
+                    f'</div>'
+                )
+        if typing_response:
+            chat_display += (
+                f'<div style="display: flex; justify-content: flex-start; margin-bottom: 5px;">'
+                f'<div style="padding: 10px; border-radius: 10px; max-width: 80%;">'
+                f'<strong>Bot:</strong> {typing_response}'
+                f'</div>'
+                f'</div>'
+            )
+        chat_display += '</div>'
+        return chat_display
 
-    # Add a button for 'enter' functionality
-    if st.button("✈️ Kirim"):
-        if user_question:
-            if state_manager.is_new_input(user_question):
-                state_manager.update_last_input(user_question)
-                try:
-                    prompt = (
-                        f"Pertanyaan: {user_question}\n"
-                        f"Jawab dalam konteks bisnis, berdasarkan hasil visualisasi dan interpretasi yang ada.\n\n"
-                        f"**Visualisasi dan Interpretasi Sebelumnya:**\n"
-                    )
-                    
-                    if 'charts' in st.session_state:
-                        prompt += "Berikut adalah visualisasi yang telah ditampilkan:\n"
-                        for idx, chart in enumerate(st.session_state.charts):
-                            prompt += f"Visualisasi {idx + 1}: {chart.get('description', 'Tidak ada deskripsi')}\n"
-                    
-                    if 'interpretation' in st.session_state:
-                        prompt += "\nInterpretasi sebelumnya:\n"
-                        for interpretation in st.session_state.interpretation:
-                            prompt += f"{interpretation}\n"
+    # Create a container for the chat history
+    chat_container = st.empty()
 
-                    response = model.generate_content(prompt)
-                    st.session_state.chatbot_response = response.text
+    # Chat interface in the middle
+    def chat_interface():
+        with st.form(key="chat_form"):
+            user_input = st.text_area("Tanya AI", placeholder="Ketik pertanyaan kamu di sini...", key="chat_input")
+            submit_button = st.form_submit_button(label="Kirim")
 
-                    st.write("#### **Jawaban Chatbot:**")
+            # Submit handler
+            if submit_button or st.session_state.get('submit_on_enter', False):
+                if user_input:
+                    st.session_state.chat_history.append({"user": user_input})
+                    st.session_state.keep_interpretation = True
+                    chatbot_response = get_chatbot_response(user_input)
+                    st.session_state.chatbot_response = chatbot_response
+                    st.session_state.chat_history.append({"bot": ""})  # Temporary empty response for typing effect
+
+                    # Typing effect
                     typing_response = ""
                     typing_box = st.empty()
-                    for i in range(len(st.session_state.chatbot_response)):
-                        typing_response += st.session_state.chatbot_response[i]
-                        typing_box.markdown(typing_response)
+                    for i in range(len(chatbot_response)):
+                        typing_response += chatbot_response[i]
+                        with typing_box.container():
+                            chat_container.markdown(display_chat(st.session_state.chat_history[:-1], typing_response), unsafe_allow_html=True)
                         time.sleep(0.004)
-                except Exception as e:
-                    st.write(f"### Error: {e}")
+
+                    # Replace the temporary empty response with the final response
+                    st.session_state.chat_history[-1]["bot"] = chatbot_response
+
+                    # Reset submit_on_enter flag
+                    st.session_state.submit_on_enter = False
+
+        # Set flag for Enter key press to trigger form submission
+        st.session_state.submit_on_enter = st.session_state.get('submit_on_enter', False) or submit_button
+
+        chat_container.markdown(display_chat(st.session_state.chat_history), unsafe_allow_html=True)
+
+    # Call chat interface
+    chat_interface()
+
+    # Hyperlink to Dashboard
+    st.markdown("[Mau lihat informasi bisnis lain dari bisnis Kamu? Klik ini ya!](#)")

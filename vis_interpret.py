@@ -3,6 +3,40 @@ from PIL import Image
 import plotly.express as px
 import pandas as pd
 import random
+import datetime
+import pandas as pd
+import streamlit as st
+from io import BytesIO
+from PIL import Image
+import plotly.express as px
+import pandas as pd
+import streamlit as st
+
+def add_date_picker(df):
+    min_date = df['Date'].min()
+    max_date = df['Date'].max()
+    start_date, end_date = st.date_input("Select date range", [min_date, max_date])
+    return start_date, end_date
+
+def add_sort_buttons(df):
+    columns = df.columns.tolist()
+    sort_by = st.selectbox("Sort By", columns)
+    sort_order = st.radio("Sort Order", ("Ascending", "Descending"))
+    return sort_order, sort_by
+
+def add_date_and_sorting_options(df):
+    if 'Date' in df.columns:
+        start_date, end_date = add_date_picker(df)
+        df = df[(df['Date'] >= pd.to_datetime(start_date)) & (df['Date'] <= pd.to_datetime(end_date))]
+
+    sort_order, sort_by = add_sort_buttons(df)
+
+    if sort_order == 'Ascending':
+        df = df.sort_values(by=sort_by, ascending=True)
+    else:
+        df = df.sort_values(by=sort_by, ascending=False)
+
+    return df
 
 # Function to save Plotly figure as an image and load it using PIL
 def fig_to_pil_image(fig):
@@ -47,6 +81,7 @@ def convert_to_date(df, columns):
 
 def visualize_pelanggan(df, selected_business_info, model):
     df = convert_to_date(df, ['Tanggal'])
+    df = add_date_and_sorting_options(df)
     charts = []
 
     if selected_business_info == 'Analisis demografi pelanggan':
@@ -107,6 +142,7 @@ def visualize_pelanggan(df, selected_business_info, model):
 
 def visualize_produk(df, selected_business_info, model):
     df = convert_to_date(df, ['Tanggal'])
+    df = add_date_and_sorting_options(df)
     charts = []
 
     if selected_business_info == 'Kinerja penjualan produk dan stok':
@@ -146,6 +182,7 @@ def visualize_produk(df, selected_business_info, model):
 
 def visualize_transaksi_penjualan(df, selected_business_info, model):
     df = convert_to_date(df, ['Tanggal'])
+    df = add_date_and_sorting_options(df)
     charts = []
 
     if selected_business_info == 'Jumlah penjualan, pendapatan, dan metode pembayaran':
@@ -170,8 +207,22 @@ def visualize_transaksi_penjualan(df, selected_business_info, model):
                                   labels={'Tanggal': 'Tanggal', 'Pendapatan': 'Pendapatan'})
             })
 
+    elif selected_business_info == 'Penjualan berdasarkan channel dan produk':
+        if 'Channel Penjualan' in df.columns and 'Produk' in df.columns and 'Jumlah Terjual' in df.columns:
+            channel_product_sales = df.groupby(['Channel Penjualan', 'Produk'])['Jumlah Terjual'].sum().reset_index()
+            charts.append({
+                'type': 'Penjualan berdasarkan channel dan produk',
+                'figure': px.histogram(data_frame=channel_product_sales, 
+                                       x='Channel Penjualan', 
+                                       y='Jumlah Terjual', 
+                                       color='Produk', 
+                                       barmode='group', 
+                                       labels={'Channel Penjualan': 'Channel Penjualan', 'Jumlah Terjual': 'Jumlah Terjual'})
+            })
+
     interpretation = interpret_chart('Transaksi Penjualan', charts, model)
     return charts, interpretation
+
 
 def visualize_lokasi_penjualan(df, selected_business_info, model):
     df = convert_to_date(df, ['Tanggal'])
