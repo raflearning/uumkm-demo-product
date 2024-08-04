@@ -24,7 +24,7 @@ st.write(
 st.markdown("---")
 
 # Ambil API key dari variabel lingkungan
-API_KEY = st.secre"general"]["APIKEY"]
+API_KEY = st.secrets["general"]["APIKEY"]
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel(model_name='gemini-1.5-flash')
 
